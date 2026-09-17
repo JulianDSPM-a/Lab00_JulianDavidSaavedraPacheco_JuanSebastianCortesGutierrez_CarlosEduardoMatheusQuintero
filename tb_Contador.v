@@ -14,7 +14,6 @@ module tb_Contador;
     wire [5:0] acc;
     wire done;
 
-
     // Instancia del módulo
     Contador uut (
         .clk(clk),
@@ -27,12 +26,10 @@ module tb_Contador;
         .done(done)
     );
 
-
     // Generación del reloj
     always begin
         #5 clk = ~clk;
     end
-
 
     // Estímulos de prueba
     initial begin
@@ -48,7 +45,6 @@ module tb_Contador;
         // Generar archivo para GTKWave
         $dumpfile("tb_Contador.vcd");
         $dumpvars(0, tb_Contador);
-
 
         // ============================
         // RESET
@@ -111,12 +107,12 @@ module tb_Contador;
         //
         // Esperado:
         // 0 → 4 → 8 → 12
-        //       ↓
-        //     CANCEL
-        //       ↓
-        //      LOAD
-        //       ↓
-        //      acc = 0
+        //           ↓
+        //         CANCEL
+        //           ↓
+        //         LOAD
+        //           ↓
+        //        acc = 0
         // ============================
 
         num_veces = 2'b11;
