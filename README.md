@@ -83,7 +83,7 @@ Las luces dependen únicamente del estado actual. La salida adicional `counter[2
 
 ### Ejercicio 2: FSM con datapath para un acumulador
 
-El módulo [`accumulator`](src/accumulator.v), denominado `Contador` en su primera versión, implementa un acumulador secuencial. La FSM controla el momento en que se inicializa y actualiza el registro `acc[5:0]`, mientras que el datapath realiza las sumas y lleva el conteo de las operaciones.
+El módulo [`accumulator`](src/accumulator.v) implementa un acumulador secuencial. La FSM controla el momento en que se inicializa y actualiza el registro `acc[5:0]`, mientras que el datapath realiza las sumas y lleva el conteo de las operaciones.
 
 Los estados definidos son:
 
@@ -142,13 +142,17 @@ Las condiciones siguientes se evalúan con `reset = 0` y utilizan los valores ac
 
 Dentro de `ADD`, `cancel` tiene prioridad sobre ambas condiciones de finalización; fuera de ese estado no interviene en las transiciones. `start` solo se consulta en `IDLE`.
 
-#### Ajuste de las condiciones del diagrama al HDL
+#### Errores encontrados al implementar el HDL y su corrección
 
-En el planteamiento inicial se utilizaban `counter == num_veces + 2` y `acc >= 20` para representar la cantidad total de sumas y el umbral de finalización. Al implementar el circuito fue necesario anticipar esas comparaciones, porque el registro de estado y el datapath se actualizan en el mismo flanco positivo mediante asignaciones no bloqueantes (`<=`). Ambos bloques evalúan sus expresiones con los valores anteriores al flanco, y las actualizaciones se aplican posteriormente. Así, aunque en ese flanco el estado pase de `ADD` a `DONE`, el datapath todavía ejecuta la suma correspondiente al estado anterior, `ADD`.
+Durante la implementación inicial del HDL se cometieron dos errores en las condiciones de finalización: se utilizó `acc >= 20` para el modo por umbral y `counter == num_veces + 2` para los modos de cantidad fija. Ambas comparaciones provocaban una suma adicional porque no tenían en cuenta la actualización simultánea del estado y del datapath.
 
-Por esta razón, en los modos `01` y `10` el HDL compara `counter == num_veces + 1`: al cumplirse la condición, se realiza la última suma y el contador alcanza `num_veces + 2`. Por ejemplo, con `num_veces = 1`, se decide finalizar cuando el contador vale 2 y la tercera suma se registra al entrar en `DONE`. En los modos `00` y `11`, la condición `acc + num_suma >= 20` anticipa el valor que tendrá el acumulador después de la última suma. Con `num_suma = 6`, la decisión se toma cuando `acc = 18` y el resultado final es 24; con `num_suma = 5`, se finaliza exactamente en 20.
+El registro de estado y los registros `acc` y `counter` se actualizan en el mismo flanco positivo mediante asignaciones no bloqueantes (`<=`). Sus expresiones se evalúan con los valores anteriores al flanco. Por ello, cuando el controlador pasa de `ADD` a `DONE`, el datapath todavía ejecuta la suma y el incremento correspondientes al estado anterior, `ADD`.
 
-El ajuste evita una suma adicional. Se debe a la semántica normal de los registros síncronos y las asignaciones no bloqueantes, no a un orden accidental de ejecución entre los bloques. La lógica de siguiente estado es combinacional (`always @(*)`); no se ejecuta únicamente en el flanco del reloj. La comparación de umbral es **mayor o igual que 20**, no estrictamente mayor. La tabla anterior incorpora las condiciones actuales y la prioridad de `cancel`.
+Con la condición incorrecta `acc >= 20` y un sumando de 5, el acumulador alcanzaba 20 mientras el controlador todavía estaba en `ADD`. La lógica de siguiente estado solicitaba entonces pasar a `DONE`, pero en el flanco que efectuaba esa transición se registraba otra suma y el resultado quedaba en 25. La corrección fue comparar `acc + num_suma >= 20`: cuando `acc = 15`, se anticipa que la siguiente suma alcanzará 20 y se entra en `DONE` en el mismo flanco que registra ese resultado. Con sumando 6, el mismo criterio permite finalizar en 24, sin realizar otra suma hasta 30.
+
+El segundo error tenía la misma causa. Para realizar `num_veces + 2` sumas, comparar directamente `counter == num_veces + 2` hacía que se completara una operación adicional al entrar en `DONE`. Por ejemplo, con `num_veces = 1`, se terminaban realizando cuatro sumas en lugar de tres. Se cambió la condición a `counter == num_veces + 1`: cuando el contador vale 2, se prepara la salida de `ADD` y el siguiente flanco registra simultáneamente la tercera suma, el contador en 3 y el estado `DONE`.
+
+Estos errores no se debían a un orden accidental de ejecución entre los bloques, sino a no anticipar la última actualización de los registros. La lógica de siguiente estado es combinacional (`always @(*)`); no se ejecuta únicamente en el flanco del reloj. En la versión actual, los modos `00` y `11` usan la comparación anticipada de umbral y los modos `01` y `10` usan la comparación anticipada del contador, siempre respetando la prioridad de `cancel` y del retorno a `LOAD` por sumando cero.
 
 #### Tabla de salidas y operaciones por estado
 
@@ -432,7 +436,7 @@ Cada diseño separa el registro de estado de la lógica combinacional encargada 
 - La separación entre la unidad de control y el datapath permitió distinguir cuándo debe ejecutarse una operación de cómo se realiza. En el acumulador, la FSM coordina el borrado y las sumas; en el transmisor, coordina la carga, el desplazamiento y la duración de cada bit. Esta separación facilita comprender el diseño y localizar errores sin mezclar las decisiones de control con el procesamiento de los datos.
 - El semáforo mostró que un estado no representa solamente una salida, sino también información necesaria para decidir el comportamiento futuro. Aunque `S1` y `S3` encienden la misma luz amarilla, distinguirlos permite determinar si la siguiente luz debe ser roja o verde, sin una bandera adicional de dirección.
 - La implementación del acumulador evidenció la importancia de analizar qué valores se leen y cuáles se actualizan en cada flanco de reloj. Las condiciones anticipadas de finalización permiten incluir la última suma sin ejecutar una operación adicional. Asimismo, definir la prioridad de `cancel` evita ambigüedades cuando una cancelación coincide con el criterio de terminación.
-- El transmisor permitió relacionar el conteo de ciclos con la duración de los bits y comprobar la coordinación entre `busy` y `done`. Mantener un único bloque secuencial encargado de `busy`, con su siguiente valor calculado de forma combinacional, hace explícitos tanto el comienzo como el final de la transmisión y la respuesta al reset.
+- El transmisor permitió verificar que cada bit permanece en la salida durante cuatro ciclos de reloj. También se comprobó que `busy` indica una transmisión en curso y que `done` señala su finalización durante un ciclo. El reset interrumpe la transmisión y devuelve el circuito al estado de reposo.
 - Las comprobaciones automáticas y las formas de onda se complementaron: los testbenches verificaron resultados y tiempos concretos, mientras que GTKWave permitió observar la relación entre estados, registros y salidas. Los resultados respaldan el funcionamiento en los escenarios ensayados, pero también muestran la importancia de documentar los límites de los registros y ampliar las pruebas a casos extremos antes de generalizar el diseño o implementarlo físicamente.
 
 ---
