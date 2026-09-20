@@ -111,7 +111,7 @@ Con una configuración estable, los modos de cantidad fija realizan como máximo
 
 #### Diagrama de transición de estados
 
-El diagrama incluye la equivalencia de los modos `00` y `11`, la espera en `LOAD` cuando el sumando es cero y el retorno desde `ADD` por cancelación o sumando cero. En las expresiones del dibujo, `+` representa OR lógico y el punto representa AND lógico. La transición `ADD → LOAD` tiene prioridad sobre la permanencia en `ADD` y la finalización; estas últimas se consideran únicamente cuando `cancel = 0` y `Cero = 0`, como detalla la tabla de transición.
+El diagrama incluye la equivalencia de los modos `00` y `11`, la espera en `LOAD` cuando el sumando es cero y el retorno desde `ADD` por cancelación o sumando cero. En las expresiones booleanas del dibujo, `+` representa OR lógico y el punto representa AND lógico; en `acc + num_suma` y `num_veces + 1`, `+` representa suma aritmética. La transición `ADD → LOAD` tiene prioridad sobre la permanencia en `ADD` y la finalización; estas últimas se consideran únicamente cuando `cancel = 0` y `Cero = 0`, como detalla la tabla de transición.
 
 ![Diagrama de transición de estados del acumulador](src/img/accumulator_state_diagram.png)
 
@@ -410,7 +410,6 @@ El código fuente y los testbenches se encuentran en la carpeta `src/`:
         ├── accumulator_twenty_sums.png
         ├── accumulator_state_diagram.png
         ├── accumulator_datapath_diagram.png
-        ├── accumulator_control_datapath_diagram.png
         ├── bytetx.png
         ├── bytetx_a5.png
         ├── bytetx_done.png
