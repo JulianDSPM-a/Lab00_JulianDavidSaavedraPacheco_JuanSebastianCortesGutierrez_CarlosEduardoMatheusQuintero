@@ -1,0 +1,14 @@
+# Formatos de simulación alternativos no utilizados en esta entrega
+*.fst
+*.lxt
+*.lxt2
+*.ghw
+*.gtkw
+
+# Archivos temporales de editores y del sistema operativo
+*.tmp
+*.bak
+*~
+.DS_Store
+Thumbs.db
+.vscode/
