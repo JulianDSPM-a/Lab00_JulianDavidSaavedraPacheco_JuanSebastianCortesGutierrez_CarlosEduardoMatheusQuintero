@@ -111,7 +111,7 @@ Con una configuración estable, los modos de cantidad fija realizan como máximo
 
 #### Diagrama de transición de estados
 
-El diagrama incluye la equivalencia de los modos `00` y `11`, la espera en `LOAD` cuando el sumando es cero y el retorno desde `ADD` por cancelación o sumando cero. En las expresiones booleanas del dibujo, `+` representa OR lógico y el punto representa AND lógico; en `acc + num_suma` y `num_veces + 1`, `+` representa suma aritmética. La transición `ADD → LOAD` tiene prioridad sobre la permanencia en `ADD` y la finalización; estas últimas se consideran únicamente cuando `cancel = 0` y `Cero = 0`, como detalla la tabla de transición.
+El diagrama incluye la equivalencia de los modos `00` y `11`, la espera en `LOAD` cuando el sumando es cero y el retorno desde `ADD` por cancelación o sumando cero. En las expresiones booleanas del dibujo, `+` representa OR lógico y el punto representa AND lógico; en `acc + num_suma` y `num_veces + 1`, `+` representa suma aritmética. Las condiciones de salida de `ADD` son mutuamente excluyentes: si `cancel = 1` o `Cero = 1`, se pasa a `LOAD`; solo cuando ambas señales valen cero, `dn` determina si se pasa a `DONE` o se permanece en `ADD`. Por tanto, no es necesario interpretar un orden de selección entre las flechas.
 
 ![Diagrama de transición de estados del acumulador](src/img/accumulator_state_diagram.png)
 
@@ -140,7 +140,7 @@ Las condiciones siguientes se evalúan con `reset = 0` y utilizan los valores ac
 | `DONE` | Incondicional | `IDLE` |
 | Caso `default` | Estado no reconocido por el `case` | `IDLE` |
 
-Dentro de `ADD`, `cancel` tiene prioridad sobre ambas condiciones de finalización; fuera de ese estado no interviene en las transiciones. `start` solo se consulta en `IDLE`.
+Dentro de `ADD`, activar `cancel` conduce a `LOAD`, incluso si se cumple el criterio de terminación. Las transiciones a `DONE` o de permanencia en `ADD` requieren `cancel = 0` y un sumando distinto de cero. Fuera de `ADD`, `cancel` no interviene en las transiciones. `start` solo se consulta en `IDLE`.
 
 #### Errores encontrados al implementar el HDL y su corrección
 
@@ -152,7 +152,7 @@ Con la condición incorrecta `acc >= 20` y un sumando de 5, el acumulador alcanz
 
 El segundo error tenía la misma causa. Para realizar `num_veces + 2` sumas, comparar directamente `counter == num_veces + 2` hacía que se completara una operación adicional al entrar en `DONE`. Por ejemplo, con `num_veces = 1`, se terminaban realizando cuatro sumas en lugar de tres. Se cambió la condición a `counter == num_veces + 1`: cuando el contador vale 2, se prepara la salida de `ADD` y el siguiente flanco registra simultáneamente la tercera suma, el contador en 3 y el estado `DONE`.
 
-Estos errores no se debían a un orden accidental de ejecución entre los bloques, sino a no anticipar la última actualización de los registros. La lógica de siguiente estado es combinacional (`always @(*)`); no se ejecuta únicamente en el flanco del reloj. En la versión actual, los modos `00` y `11` usan la comparación anticipada de umbral y los modos `01` y `10` usan la comparación anticipada del contador, siempre respetando la prioridad de `cancel` y del retorno a `LOAD` por sumando cero.
+Estos errores no se debían a un orden accidental de ejecución entre los bloques, sino a no anticipar la última actualización de los registros. La lógica de siguiente estado es combinacional (`always @(*)`); no se ejecuta únicamente en el flanco del reloj. En la versión actual, los modos `00` y `11` usan la comparación anticipada de umbral y los modos `01` y `10` usan la comparación anticipada del contador. Estas comparaciones permiten finalizar únicamente si `cancel = 0` y `num_suma != 0`; en caso contrario, desde `ADD` se regresa a `LOAD`.
 
 #### Tabla de salidas y operaciones por estado
 
@@ -277,7 +277,7 @@ El testbench [`tb_accumulator`](src/tb_accumulator.v) genera un reloj de periodo
 | 3 | Modo `11`, `num_suma = 4`, hasta alcanzar 20, con cancelación | La operación se reinicia y finaliza con `acc = 20`. |
 | 4 | `num_suma = 6`, hasta `acc >= 20` | Secuencia `0, 6, 12, 18, 24`; resultado `acc = 24`. |
 | 5 | `num_suma = 5`, hasta `acc >= 20` | Finaliza exactamente con `acc = 20`; verifica el caso de igualdad. |
-| 6 | Tres sumas de 5; `cancel` coincide con la condición de finalización | Se prioriza `LOAD` sobre `DONE`, se reinicia la operación y finaliza con `acc = 15`. |
+| 6 | Tres sumas de 5; `cancel` coincide con la condición de finalización | `cancel = 1` excluye la transición a `DONE` y conduce a `LOAD`; la operación se reinicia y finalmente entrega `acc = 15`. |
 | 7 | Modo `11`, `num_suma = 6` | Cuatro sumas y resultado 24, igual que en la prueba 4 con modo `00`. |
 | 8 | Modo `01`, `num_suma = 15` | Tres sumas y resultado 45. |
 | 9 | Modo `10`, `num_suma = 15` | Cuatro sumas y resultado 60, sin desbordamiento. |
@@ -285,7 +285,7 @@ El testbench [`tb_accumulator`](src/tb_accumulator.v) genera un reloj de periodo
 | 14 | Modo `00`; el sumando cambia de 6 a 0 durante `ADD` y luego vuelve a 6 | Retorno a `LOAD`, borrado y reinicio; resultado 24. |
 | 15 | Modo `11`, `num_suma = 1` | Veinte sumas y resultado 20; contador final igual a 20. |
 
-En todas las pruebas, `done` permanece activo durante un solo ciclo. Durante la tercera prueba, el acumulador alcanza 12, regresa a cero por la operación de `LOAD` y reinicia la suma. La sexta prueba demuestra específicamente la prioridad de `cancel` cuando también se cumple el criterio de terminación. `test_id` coincide con el número de prueba de la tabla.
+En todas las pruebas, `done` permanece activo durante un solo ciclo al finalizar la operación. Durante la tercera prueba, el acumulador alcanza 12, regresa a cero por la operación de `LOAD` y reinicia la suma. La sexta prueba comprueba que `cancel = 1` conduce a `LOAD` sin activar `done`, aunque también se cumpla el criterio de terminación. `test_id` coincide con el número de prueba de la tabla.
 
 #### Evidencia
 
@@ -299,7 +299,7 @@ Las pruebas 1 y 2 usan `num_suma = 5`. El modo `01` termina tras tres sumas, con
 
 ![Detalle de los modos de tres y cuatro sumas](src/img/accumulator_fixed_sums.png)
 
-#### Prioridad de cancelación
+#### Cancelación coincidente con el criterio de terminación
 
 En la prueba 6, `cancel` se activa cuando la siguiente suma completaría la operación. El controlador entra en `LOAD` (`01`) en lugar de `DONE`: todavía se registra la suma de ese flanco, pero `done` permanece desactivado. En el siguiente flanco se borran los registros y comienza de nuevo la secuencia, que finalmente entrega 15.
 
@@ -435,7 +435,7 @@ Cada diseño separa el registro de estado de la lógica combinacional encargada 
 - El uso de máquinas de estados finitos y de su representación mediante cartas ASM permite describir de forma ordenada sistemas cuyo comportamiento depende de una secuencia de decisiones y operaciones. En electrónica digital, esta organización facilita dividir un problema complejo en estados, condiciones de transición y acciones concretas. El mismo enfoque puede aplicarse al control de procesos, la automatización y los protocolos de comunicación.
 - La separación entre la unidad de control y el datapath permitió distinguir cuándo debe ejecutarse una operación de cómo se realiza. En el acumulador, la FSM coordina el borrado y las sumas; en el transmisor, coordina la carga, el desplazamiento y la duración de cada bit. Esta separación facilita comprender el diseño y localizar errores sin mezclar las decisiones de control con el procesamiento de los datos.
 - El semáforo mostró que un estado no representa solamente una salida, sino también información necesaria para decidir el comportamiento futuro. Aunque `S1` y `S3` encienden la misma luz amarilla, distinguirlos permite determinar si la siguiente luz debe ser roja o verde, sin una bandera adicional de dirección.
-- La implementación del acumulador evidenció la importancia de analizar qué valores se leen y cuáles se actualizan en cada flanco de reloj. Las condiciones anticipadas de finalización permiten incluir la última suma sin ejecutar una operación adicional. Asimismo, definir la prioridad de `cancel` evita ambigüedades cuando una cancelación coincide con el criterio de terminación.
+- La implementación del acumulador evidenció la importancia de analizar qué valores se leen y cuáles se actualizan en cada flanco de reloj. Las condiciones anticipadas de finalización permiten incluir la última suma sin ejecutar una operación adicional. Asimismo, condicionar la finalización a que `cancel` esté desactivado garantiza que una solicitud de cancelación lleve el sistema a `LOAD`, incluso cuando se cumple el criterio de terminación. Las condiciones mutuamente excluyentes del diagrama expresan este comportamiento sin ambigüedad.
 - El transmisor permitió verificar que cada bit permanece en la salida durante cuatro ciclos de reloj. También se comprobó que `busy` indica una transmisión en curso y que `done` señala su finalización durante un ciclo. El reset interrumpe la transmisión y devuelve el circuito al estado de reposo.
 - Las comprobaciones automáticas y las formas de onda se complementaron: los testbenches verificaron resultados y tiempos concretos, mientras que GTKWave permitió observar la relación entre estados, registros y salidas. Los resultados respaldan el funcionamiento en los escenarios ensayados, pero también muestran la importancia de documentar los límites de los registros y ampliar las pruebas a casos extremos antes de generalizar el diseño o implementarlo físicamente.
 
